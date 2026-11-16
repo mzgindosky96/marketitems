@@ -33,6 +33,9 @@ button.danger{background:#fbeaea;color:#a12b2b;border:1px solid #f0d4d4;border-r
 .pill.low{background:#fdeeee;color:#a12b2b}
 .hidden{display:none!important}.notice{padding:10px;background:#e8f3eb;color:#21623b;border-radius:10px;font-size:13px;margin-bottom:10px}
 video{width:100%;border-radius:12px;background:#111;max-height:260px}
+.scanline{position:relative;overflow:hidden}
+.scanline::after{content:'';position:absolute;left:0;right:0;top:0;height:3px;background:#d8c8a4;animation:scan 1.6s linear infinite}
+@keyframes scan{0%{top:0}50%{top:calc(100% - 3px)}100%{top:0}}
 footer{text-align:center;color:var(--muted);font-size:11px;padding:14px}
 @media(min-width:650px){.stats{grid-template-columns:repeat(4,1fr)}}
 </style>
@@ -60,8 +63,8 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:14px}
 <div id="notice" class="notice hidden"></div>
 <section id="sale" class="panel">
  <h2>فرۆشتنی کاڵا</h2>
- <button class="secondary" id="cameraBtn">📷 کردنەوەی کامێرا بۆ بارکۆد</button>
- <div id="cameraArea" class="hidden" style="margin-top:10px"><video id="video" playsinline></video><p class="muted">بارکۆدەکە لە چوارچێوەی کامێرا دابنێ.</p><button class="secondary" id="stopCamera">داخستنی کامێرا</button></div>
+ <button class="secondary" id="cameraBtn">📷 کردنەوەی کامێرا بۆ سکانکردن</button>
+ <div id="cameraArea" class="hidden" style="margin-top:10px"><video id="video" playsinline></video><p class="muted" id="scanStatus">بارکۆدەکە لە چوارچێوەی کامێرا دابنێ — هەر بارکۆدێک ڕاستەوخۆ بۆ لیست زیاد دەکرێت.</p><button class="secondary" id="stopCamera">داخستنی کامێرا</button></div>
  <label>بارکۆد یان ناوی کاڵا</label><input id="saleSearch" placeholder="گەڕان...">
  <label>کاڵا</label><select id="saleProduct"></select>
  <label>ژمارەی دانە</label><input id="saleQty" type="number" min="1" value="1">
@@ -95,7 +98,7 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:14px}
 </div>
 </main>
 <script>
-/* ======== CONFIG: your values from Firebase console ======== */
+/* ======== CONFIG ======== */
 const firebaseConfig={
   apiKey:"AIzaSyAQ4b4YUvM_-xPmRtX8NiUp0FvAFvMYtuM",
   authDomain:"berosha-pos.firebaseapp.com",
@@ -104,8 +107,6 @@ const firebaseConfig={
   messagingSenderId:"663573597120",
   appId:"1:663573597120:web:2422dc6fcb93f190a75625"
 };
-
-
 firebase.initializeApp(firebaseConfig);
 const auth=firebase.auth(),db=firebase.firestore();
 
@@ -130,7 +131,7 @@ document.getElementById('loginBtn').onclick=()=>{
  auth.signInWithEmailAndPassword(loginEmail.value.trim(),loginPass.value)
   .catch(e=>msg('هەڵەی چوونەژوورەوە: ئیمەیل یان وشەی نهێنی هەڵەیە.'));
 };
-document.getElementById('logoutBtn').onclick=()=>auth.signOut();
+document.getElementById('logoutBtn').onclick=()=>{stopCam();auth.signOut()};
 
 /* ======== Firestore live sync ======== */
 let unsub=[];
@@ -145,7 +146,6 @@ function listen(){
  unsub.push(db.collection('purchases').orderBy('date','desc').limit(200).onSnapshot(s=>{
   purchases=s.docs.map(d=>d.data());render();renderHistory();
  }));
- db.collection('meta').doc('sync').set({t:Date.now()},{merge:true});
  document.getElementById('syncInfo').textContent='پەیوەندی بە Cloud کراوە — هەموو ئامێرەکان یەک داتا دەبینن.';
 }
 
@@ -176,14 +176,14 @@ function editProduct(code){
  db.collection('products').doc(code).update({name:nn.trim()||p.name,price:+np,cost:+nc}).then(()=>msg('گۆڕانکاری پاشەکەوت کرا.'));
 }
 function renderHistory(){
- const row=(icon,t)=>`<div class="item"><div><b>${icon} ${t.label}</b><div class="muted">${new Date(t.date).toLocaleString('en-GB')} · ${t.items? t.items.map(i=>i.name+'×'+i.qty).join('، ') : (t.qty+' دانە')}</div></div><b>${fmt(t.total)}</b></div>`;
+ const row=(icon,t)=>`<div class="item"><div><b>${icon} ${t.label}</b><div class="muted">${new Date(t.date).toLocaleString('en-GB')} · ${t.user||''} · ${t.items? t.items.map(i=>i.name+'×'+i.qty).join('، ') : (t.qty+' دانە')}</div></div><b>${fmt(t.total)}</b></div>`;
  const all=[
   ...sales.map(s=>({type:'sale',...s})),
   ...purchases.map(p=>({type:'buy',...p}))
  ].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,50);
  document.getElementById('historyList').innerHTML=all.map(t=>t.type==='sale'
-  ?row('🛒',{label:'فرۆشتن',date:t.date,items:t.items,total:t.total})
-  :row('📦',{label:'کڕین',date:t.date,qty:t.qty,total:t.total})).join('')||'<p class="muted">هێشتا مێژوو نییە.</p>';
+  ?row('🛒',{label:'فرۆشتن',date:t.date,items:t.items,total:t.total,user:t.user})
+  :row('📦',{label:'کڕین',date:t.date,qty:t.qty,total:t.total,user:t.user})).join('')||'<p class="muted">هێشتا مێژوو نییە.</p>';
 }
 function current(id){return products.find(p=>p.code===document.getElementById(id).value)}
 function amounts(){
@@ -196,12 +196,16 @@ function amounts(){
 function renderCart(){
  const total=cart.reduce((s,x)=>s+x.price*x.qty,0);
  document.getElementById('cartTotal').textContent=fmt(total);
- document.getElementById('cartList').innerHTML=cart.length?cart.map((x,i)=>`<div class="item"><div><b>${x.name}</b><div class="muted">نرخ دانە: ${fmt(x.price)} × ${x.qty} دانە</div><div><b>کۆی ئەم کاڵایە: ${fmt(x.price*x.qty)}</b></div></div><button class="secondary" data-remove="${i}" type="button">لابردن</button></div>`).join(''):'<p class="muted">هێشتا هیچ کاڵایەک زیاد نەکراوە.</p>';
+ document.getElementById('cartList').innerHTML=cart.length?cart.map((x,i)=>`<div class="item"><div><b>${x.name}</b><div class="muted">نرخ دانە: ${fmt(x.price)} × ${x.qty} دانە</div><div><b>کۆی ئەم کاڵایە: ${fmt(x.price*x.qty)}</b></div></div><div style="display:flex;gap:6px"><button class="secondary" data-inc="${i}" type="button">＋</button><button class="secondary" data-dec="${i}" type="button">－</button><button class="danger" data-remove="${i}" type="button">لابردن</button></div></div>`).join(''):'<p class="muted">هێشتا هیچ کاڵایەک زیاد نەکراوە.</p>';
  document.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{cart.splice(+btn.dataset.remove,1);renderCart()});
+ document.querySelectorAll('[data-inc]').forEach(btn=>btn.onclick=()=>{const it=cart[+btn.dataset.inc];if(it.qty<findP(it.code).stock){it.qty++;renderCart()}});
+ document.querySelectorAll('[data-dec]').forEach(btn=>btn.onclick=()=>{const i=+btn.dataset.dec;cart[i].qty--;if(cart[i].qty<1)cart.splice(i,1);renderCart()});
 }
+const findP=code=>products.find(p=>p.code===code);
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
  ['sale','stock','history','add','buy'].forEach(id=>document.getElementById(id).classList.toggle('hidden',id!==b.dataset.tab));
+ if(b.dataset.tab!=='sale')stopCam();
 });
 ['saleProduct','saleQty','buyProduct','buyQty'].forEach(id=>document.getElementById(id).addEventListener('input',amounts));
 document.getElementById('saleSearch').oninput=e=>{
@@ -222,14 +226,17 @@ document.getElementById('addBtn').onclick=()=>{
   });
  });
 };
-document.getElementById('addToCartBtn').onclick=()=>{
- let p=current('saleProduct'),q=+saleQty.value;
- if(!p||q<1){msg('کاڵا یان ژمارەی دانە هەڵەیە.');return}
+function addToCart(p,q=1){
  const already=cart.filter(x=>x.code===p.code).reduce((s,x)=>s+x.qty,0);
- if(q+already>p.stock){msg('ژمارەی داواکراو لە کۆگا بەردەست نییە.');return}
+ if(q+already>p.stock){msg('ژمارەی داواکراو لە کۆگا بەردەست نییە: '+p.name);return false}
  const found=cart.find(x=>x.code===p.code);
  if(found)found.qty+=q;else cart.push({code:p.code,name:p.name,price:p.price,cost:p.cost,qty:q});
- renderCart();saleQty.value=1;amounts();msg('کاڵا زیاد کرا بۆ لیستی فرۆشتن.');
+ renderCart();return true;
+}
+document.getElementById('addToCartBtn').onclick=()=>{
+ const p=current('saleProduct'),q=+saleQty.value;
+ if(!p||q<1){msg('کاڵا یان ژمارەی دانە هەڵەیە.');return}
+ if(addToCart(p,q)){saleQty.value=1;amounts();msg('کاڵا زیاد کرا بۆ لیستی فرۆشتن.')}
 };
 document.getElementById('sellBtn').onclick=async()=>{
  if(!cart.length){msg('سەرەتا کاڵا زیاد بکە بۆ لیستی فرۆشتن.');return}
@@ -238,48 +245,94 @@ document.getElementById('sellBtn').onclick=async()=>{
   const d=await db.collection('products').doc(item.code).get();
   if(!d.exists||d.data().stock<item.qty){msg('کۆگای کاڵای '+item.name+' بەشی ناکات.');return}
  }
+ const batch=db.batch();
  let total=0,earned=0;
  for(const item of cart){
-  const ref=db.collection('products').doc(item.code);
+  batch.update(db.collection('products').doc(item.code),{stock:firebase.firestore.FieldValue.increment(-item.qty)});
   total+=item.price*item.qty;earned+=(item.price-item.cost)*item.qty;
-  ref.update({stock:firebase.firestore.FieldValue.increment(-item.qty)});
  }
- const batch=db.batch();
  batch.set(db.collection('sales').doc(),{date:new Date().toISOString(),user:auth.currentUser.email,items:cart.map(x=>({code:x.code,name:x.name,price:x.price,qty:x.qty})),total,profit:earned});
- batch.set(db.collection('meta').doc('sync'),{t:Date.now()},{merge:true});
  await batch.commit();
  cart=[];renderCart();saleQty.value=1;amounts();msg('فرۆشتن بە کۆی '+fmt(total)+' تۆمار کرا.');
 };
 document.getElementById('buyBtn').onclick=async()=>{
  let p=current('buyProduct'),q=+buyQty.value;
  if(!p||q<1){msg('کاڵا یان ژمارەی دانە هەڵەیە.');return}
- db.collection('products').doc(p.code).update({stock:firebase.firestore.FieldValue.increment(q)});
- await db.collection('purchases').add({date:new Date().toISOString(),user:auth.currentUser.email,code:p.code,qty:q,total:p.cost*q});
+ const batch=db.batch();
+ batch.update(db.collection('products').doc(p.code),{stock:firebase.firestore.FieldValue.increment(q)});
+ batch.set(db.collection('purchases').doc(),{date:new Date().toISOString(),user:auth.currentUser.email,code:p.code,qty:q,total:p.cost*q});
+ await batch.commit();
  buyQty.value=1;msg('کڕین تۆمار کرا.');
 };
 
-/* ======== Barcode scanner (ZXing) ======== */
-let codeReader=null;
+/* ======== Fast barcode scanner ========
+ Native BarcodeDetector first (very fast on Android Chrome),
+ ZXing fallback with TRY_HARDER + fast loop for everyone else.
+ In sale mode the camera stays open: each scan adds 1 to cart. */
+let stream=null,videoEl=null,scanLoop=false,scanMode='sale',lastCode='',lastTime=0,nativeDetector=null,zxReader=null,rafId=null;
+const COOLDOWN=1000; // ms between identical scans
+
+function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(.15,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.12);o.start();o.stop(c.currentTime+.12);setTimeout(()=>c.close(),300)}catch(e){}}
+
+async function getCameraStream(){
+ // higher resolution = sharper frames = faster/more reliable decode
+ return navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}},audio:false});
+}
+function onDecode(value){
+ const now=Date.now();
+ if(value===lastCode&&now-lastTime<COOLDOWN)return; // same code too soon
+ lastCode=value;lastTime=now;
+ beep();
+ if(scanMode==='add'){
+  document.getElementById('pCode').value=value;
+  stopCam();msg('بارکۆد خوێندرایەوە: '+value);
+ }else{
+  const p=findP(value);
+  if(!p){msg('ئەم بارکۆدە لە کۆگا نییە: '+value);return}
+  if(addToCart(p,1)){document.getElementById('scanStatus').textContent='✅ '+p.name+' — کۆی لیست: '+fmt(cart.reduce((s,x)=>s+x.price*x.qty,0));}
+ }
+}
 async function startScanner(mode){
+ scanMode=mode;
  try{
   if(!navigator.mediaDevices?.getUserMedia){msg('کامێرا پێویستی بە HTTPS هەیە.');return}
-  codeReader=new ZXing.BrowserMultiFormatReader();
+  videoEl=document.getElementById(mode==='add'?'addVideo':'video');
   (mode==='add'?document.getElementById('addCameraArea'):document.getElementById('cameraArea')).classList.remove('hidden');
-  await codeReader.decodeFromVideoDevice(null,document.getElementById(mode==='add'?'addVideo':'video'),result=>{
-   if(!result)return;
-   const value=result.getText();stopCam();
-   if(mode==='add'){document.getElementById('pCode').value=value;}
-   else{
-    const p=products.find(x=>x.code===value);
-    if(!p){msg('ئەم بارکۆدە لە کۆگا نییە: '+value);return}
-    document.getElementById('saleSearch').value='';document.getElementById('saleProduct').value=p.code;amounts();
-   }
-   msg('بارکۆد خوێندرایەوە: '+value);
-  });
+  videoEl.classList.add('scanline');
+  stream=await getCameraStream();
+  videoEl.srcObject=stream;await videoEl.play();
+  scanLoop=true;
+  if('BarcodeDetector' in window){
+   const formats=await BarcodeDetector.getSupportedFormats();
+   const wanted=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code'].filter(f=>formats.includes(f));
+   nativeDetector=new BarcodeDetector({formats:wanted.length?wanted:undefined});
+   scanNative();
+  }else{
+   zxReader=new ZXing.BrowserMultiFormatReader();
+   try{zxReader.timeBetweenDecodingAttempts=50}catch(e){}
+   await zxReader.decodeFromStream(stream,videoEl,(result,err)=>{
+    if(!scanLoop)return;
+    if(result)onDecode(result.getText());
+   });
+  }
  }catch(e){msg('ڕێگە بە کامێرا نەدرا یان کامێرا بەردەست نییە.')}
 }
+async function scanNative(){
+ while(scanLoop&&nativeDetector){
+  try{
+   const codes=await nativeDetector.detect(videoEl);
+   if(codes.length&&scanLoop)onDecode(codes[0].rawValue);
+  }catch(e){}
+  await new Promise(r=>setTimeout(r,80)); // ~12 fps — fast but battery-friendly
+ }
+}
 function stopCam(){
- if(codeReader){try{codeReader.reset()}catch(e){}codeReader=null}
+ scanLoop=false;
+ if(rafId)cancelAnimationFrame(rafId);
+ if(zxReader){try{zxReader.reset()}catch(e){}zxReader=null}
+ nativeDetector=null;
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ if(videoEl){videoEl.srcObject=null;videoEl.classList.remove('scanline')}
  document.getElementById('cameraArea').classList.add('hidden');
  document.getElementById('addCameraArea').classList.add('hidden');
 }
