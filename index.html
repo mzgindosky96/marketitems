@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ckb" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#172d25">
+<title>Beroshka Saadini Market POS</title>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<!-- Firebase v10 compat -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--g:#172d25;--gold:#d8c8a4;--bg:#f4f6f3;--card:#fff;--ink:#1d2923;--muted:#68756d;--line:#e2e8e3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:var(--g);color:white;padding:22px 18px 18px;border-radius:0 0 22px 22px}
+.brand{font-size:21px;font-weight:800;letter-spacing:.4px}.sub{color:var(--gold);font-size:11px;letter-spacing:1.5px}
+h1{font-size:20px;margin:16px 0 4px}header p{margin:0;color:#dce8df;font-size:13px}
+.wrap{max-width:760px;margin:auto;padding:14px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.stat,.panel{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:13px}
+.stat small{display:block;color:var(--muted);font-size:12px}.stat b{font-size:19px;display:block;margin-top:5px}
+nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:14px 0}
+nav button{border:1px solid var(--line);background:white;border-radius:11px;padding:11px 4px;font-weight:700;color:var(--ink)}
+nav button.active{background:var(--g);color:white;border-color:var(--g)}
+h2{font-size:17px;margin:0 0 12px}.panel{margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+input,select{width:100%;border:1px solid #d8e0da;border-radius:10px;padding:12px;background:white;font:inherit;font-size:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+button.primary{width:100%;background:var(--g);color:white;border:0;border-radius:11px;padding:13px;font:inherit;font-weight:700;margin-top:12px}
+button.secondary{background:#edf2ed;color:var(--g);border:1px solid var(--line);border-radius:9px;padding:9px 12px;font:inherit}
+button.danger{background:#fbeaea;color:#a12b2b;border:1px solid #f0d4d4;border-radius:9px;padding:9px 12px;font:inherit}
+.item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}.item:last-child{border:0}
+.muted{color:var(--muted);font-size:12px}.pill{background:#e8f3eb;color:#21623b;border-radius:20px;padding:4px 8px;font-size:11px}
+.pill.low{background:#fdeeee;color:#a12b2b}
+.hidden{display:none!important}.notice{padding:10px;background:#e8f3eb;color:#21623b;border-radius:10px;font-size:13px;margin-bottom:10px}
+video{width:100%;border-radius:12px;background:#111;max-height:260px}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:14px}
+@media(min-width:650px){.stats{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header><div class="brand">BEROSHKA</div><div class="sub">SAADINI MARKET · POS</div><h1>بەڕێوەبردنی فرۆشگا</h1><p>سیستەمی کڕین، فرۆشتن و کۆگا — Cloud</p><p style="margin-top:6px"><span id="whoami" class="pill"></span> <button class="secondary" id="logoutBtn" style="margin-inline-start:6px">چوونەدەرەوە</button></p></header>
+<main class="wrap">
+<!-- Login screen -->
+<section id="login" class="panel" style="max-width:380px;margin:24px auto">
+ <h2>چوونەژوورەوە</h2>
+ <label>ئیمەیل</label><input id="loginEmail" type="email" placeholder="kas1@berosha.com">
+ <label>وشەی نهێنی</label><input id="loginPass" type="password">
+ <button class="primary" id="loginBtn">چوونەژوورەوە</button>
+</section>
+<div id="app" class="hidden">
+<section class="stats">
+ <div class="stat"><small>کۆی فرۆشتن</small><b id="salesTotal">0 د.ع</b></div>
+ <div class="stat"><small>قازانجی فرۆشتن</small><b id="profitTotal">0 د.ع</b></div>
+ <div class="stat"><small>کڕین</small><b id="purchaseTotal">0 د.ع</b></div>
+ <div class="stat"><small>دانە لە کۆگا</small><b id="stockTotal">0</b></div>
+</section>
+<nav>
+ <button class="active" data-tab="sale">فرۆشتن</button><button data-tab="stock">کۆگا</button><button data-tab="history">مێژوو</button><button data-tab="add">زیادکردن</button><button data-tab="buy">کڕین</button>
+</nav>
+<div id="notice" class="notice hidden"></div>
+<section id="sale" class="panel">
+ <h2>فرۆشتنی کاڵا</h2>
+ <button class="secondary" id="cameraBtn">📷 کردنەوەی کامێرا بۆ بارکۆد</button>
+ <div id="cameraArea" class="hidden" style="margin-top:10px"><video id="video" playsinline></video><p class="muted">بارکۆدەکە لە چوارچێوەی کامێرا دابنێ.</p><button class="secondary" id="stopCamera">داخستنی کامێرا</button></div>
+ <label>بارکۆد یان ناوی کاڵا</label><input id="saleSearch" placeholder="گەڕان...">
+ <label>کاڵا</label><select id="saleProduct"></select>
+ <label>ژمارەی دانە</label><input id="saleQty" type="number" min="1" value="1">
+ <div class="item"><span>نرخی هەر دانە</span><b id="unitPrice">0 د.ع</b></div>
+ <div class="item"><span>کۆی نرخی ئەم کاڵایە</span><b id="saleAmount">0 د.ع</b></div>
+ <button class="secondary" id="addToCartBtn" type="button">＋ زیادکردن بۆ لیستی فرۆشتن</button>
+ <h2 style="margin-top:18px">لیستی کاڵاکانی فرۆشتن</h2>
+ <div id="cartList"><p class="muted">هێشتا هیچ کاڵایەک زیاد نەکراوە.</p></div>
+ <div class="item" style="border-top:2px solid var(--g);margin-top:8px;padding-top:14px"><b>کۆی گشتی پارە</b><b id="cartTotal">0 د.ع</b></div>
+ <button class="primary" id="sellBtn">تەواوکردنی فرۆشتن و تۆمارکردن</button>
+</section>
+<section id="stock" class="panel hidden"><h2>کۆگای کاڵاکان</h2><div id="stockList"></div></section>
+<section id="history" class="panel hidden"><h2>مێژووی فرۆشتن و کڕین</h2><div id="historyList"></div></section>
+<section id="add" class="panel hidden">
+ <h2>زیادکردنی کاڵای نوێ</h2>
+ <label>ناوی کاڵا</label><input id="pName" placeholder="ناوی کاڵا">
+ <label>بارکۆد</label>
+ <div class="row"><input id="pCode" placeholder="بارکۆد بە دەست بنووسە"><button class="secondary" id="addCameraBtn" type="button">📷 سکانکردن</button></div>
+ <div id="addCameraArea" class="hidden" style="margin-top:10px"><video id="addVideo" playsinline></video><button class="secondary" id="addStopCamera" type="button">داخستنی کامێرا</button></div>
+ <div class="row"><div><label>ژمارەی دانە</label><input id="pStock" type="number" min="0" value="1"></div><div></div></div>
+ <div class="row"><div><label>نرخی کڕین (د.ع)</label><input id="pCost" type="number" min="0" value="0"></div><div><label>نرخی فرۆشتن (د.ع)</label><input id="pPrice" type="number" min="0" value="0"></div></div>
+ <button class="primary" id="addBtn">زیادکردنی کاڵا</button>
+</section>
+<section id="buy" class="panel hidden">
+ <h2>کڕینی کاڵا بۆ کۆگا</h2><label>کاڵا</label><select id="buyProduct"></select>
+ <label>ژمارەی دانە</label><input id="buyQty" type="number" min="1" value="1">
+ <div class="item"><span>کۆی تێچوو</span><b id="buyAmount">0 د.ع</b></div>
+ <button class="primary" id="buyBtn">تۆمارکردنی کڕین</button>
+</section>
+<footer id="syncInfo">گونجان لەگەڵ Cloud…</footer>
+</div>
+</main>
+<script>
+/* ======== CONFIG: your values from Firebase console ======== */
+const firebaseConfig={
+  apiKey:"AIzaSyAQ4b4YUvM_-xPmRtX8NiUp0FvAFvMYtuM",
+  authDomain:"berosha-pos.firebaseapp.com",
+  projectId:"berosha-pos",
+  storageBucket:"berosha-pos.firebasestorage.app",
+  messagingSenderId:"663573597120",
+  appId:"1:663573597120:web:2422dc6fcb93f190a75625"
+};
+
+
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(),db=firebase.firestore();
+
+const fmt=n=>Number(n||0).toLocaleString('en-US')+' د.ع';
+let products=[],sales=[],purchases=[],cart=[];
+
+function msg(t){const n=document.getElementById('notice');n.textContent=t;n.classList.remove('hidden');setTimeout(()=>n.classList.add('hidden'),2600)}
+
+/* ======== Auth ======== */
+auth.onAuthStateChanged(u=>{
+ if(u){
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('whoami').textContent=u.email;
+  listen();
+ }else{
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');
+ }
+});
+document.getElementById('loginBtn').onclick=()=>{
+ auth.signInWithEmailAndPassword(loginEmail.value.trim(),loginPass.value)
+  .catch(e=>msg('هەڵەی چوونەژوورەوە: ئیمەیل یان وشەی نهێنی هەڵەیە.'));
+};
+document.getElementById('logoutBtn').onclick=()=>auth.signOut();
+
+/* ======== Firestore live sync ======== */
+let unsub=[];
+function listen(){
+ unsub.forEach(f=>f());unsub=[];
+ unsub.push(db.collection('products').orderBy('name').onSnapshot(s=>{
+  products=s.docs.map(d=>d.data());render();
+ },e=>msg('هەڵەی خوێندنەوەی کۆگا.')));
+ unsub.push(db.collection('sales').orderBy('date','desc').limit(200).onSnapshot(s=>{
+  sales=s.docs.map(d=>d.data());render();renderHistory();
+ }));
+ unsub.push(db.collection('purchases').orderBy('date','desc').limit(200).onSnapshot(s=>{
+  purchases=s.docs.map(d=>d.data());render();renderHistory();
+ }));
+ db.collection('meta').doc('sync').set({t:Date.now()},{merge:true});
+ document.getElementById('syncInfo').textContent='پەیوەندی بە Cloud کراوە — هەموو ئامێرەکان یەک داتا دەبینن.';
+}
+
+/* ======== UI ======== */
+function totals(){
+ document.getElementById('salesTotal').textContent=fmt(sales.reduce((a,s)=>a+s.total,0));
+ document.getElementById('profitTotal').textContent=fmt(sales.reduce((a,s)=>a+s.profit,0));
+ document.getElementById('purchaseTotal').textContent=fmt(purchases.reduce((a,p)=>a+p.total,0));
+ document.getElementById('stockTotal').textContent=products.reduce((a,p)=>a+p.stock,0);
+}
+function render(){
+ totals();
+ const opt=p=>`<option value="${p.code}">${p.name} · ${p.code} · ${fmt(p.price)}</option>`;
+ document.getElementById('saleProduct').innerHTML=products.map(opt).join('')||'<option value="">هیچ کاڵایەک نییە</option>';
+ document.getElementById('buyProduct').innerHTML=products.map(opt).join('')||'<option value="">هیچ کاڵایەک نییە</option>';
+ document.getElementById('stockList').innerHTML=products.map(p=>`<div class="item"><div><b>${p.name}</b><div class="muted">بارکۆد: ${p.code} · کڕین ${fmt(p.cost)} · فرۆشتن ${fmt(p.price)}</div></div><div style="display:flex;gap:6px;align-items:center"><span class="pill ${p.stock<=3?'low':''}">${p.stock} دانە</span><button class="secondary" data-edit="${p.code}" type="button">گۆڕین</button><button class="danger" data-del="${p.code}" type="button">سڕینەوە</button></div></div>`).join('')||'<p class="muted">هێشتا کاڵا زیاد نەکراوە.</p>';
+ document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+  if(confirm('دڵنیای لە سڕینەوەی ئەم کاڵایە؟')){await db.collection('products').doc(b.dataset.del).delete();msg('کاڵا سڕایەوە.')}
+ });
+ document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editProduct(b.dataset.edit));
+ amounts();
+}
+function editProduct(code){
+ const p=products.find(x=>x.code===code);if(!p)return;
+ const nn=prompt('ناوی کاڵا:',p.name);if(nn===null)return;
+ const np=prompt('نرخی فرۆشتن:',p.price);if(np===null)return;
+ const nc=prompt('نرخی کڕین:',p.cost);if(nc===null)return;
+ db.collection('products').doc(code).update({name:nn.trim()||p.name,price:+np,cost:+nc}).then(()=>msg('گۆڕانکاری پاشەکەوت کرا.'));
+}
+function renderHistory(){
+ const row=(icon,t)=>`<div class="item"><div><b>${icon} ${t.label}</b><div class="muted">${new Date(t.date).toLocaleString('en-GB')} · ${t.items? t.items.map(i=>i.name+'×'+i.qty).join('، ') : (t.qty+' دانە')}</div></div><b>${fmt(t.total)}</b></div>`;
+ const all=[
+  ...sales.map(s=>({type:'sale',...s})),
+  ...purchases.map(p=>({type:'buy',...p}))
+ ].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,50);
+ document.getElementById('historyList').innerHTML=all.map(t=>t.type==='sale'
+  ?row('🛒',{label:'فرۆشتن',date:t.date,items:t.items,total:t.total})
+  :row('📦',{label:'کڕین',date:t.date,qty:t.qty,total:t.total})).join('')||'<p class="muted">هێشتا مێژوو نییە.</p>';
+}
+function current(id){return products.find(p=>p.code===document.getElementById(id).value)}
+function amounts(){
+ let p=current('saleProduct'),q=Math.max(0,+document.getElementById('saleQty').value||0);
+ document.getElementById('unitPrice').textContent=fmt(p?.price||0);
+ document.getElementById('saleAmount').textContent=fmt((p?.price||0)*q);
+ let b=current('buyProduct'),n=Math.max(0,+document.getElementById('buyQty').value||0);
+ document.getElementById('buyAmount').textContent=fmt((b?.cost||0)*n);
+}
+function renderCart(){
+ const total=cart.reduce((s,x)=>s+x.price*x.qty,0);
+ document.getElementById('cartTotal').textContent=fmt(total);
+ document.getElementById('cartList').innerHTML=cart.length?cart.map((x,i)=>`<div class="item"><div><b>${x.name}</b><div class="muted">نرخ دانە: ${fmt(x.price)} × ${x.qty} دانە</div><div><b>کۆی ئەم کاڵایە: ${fmt(x.price*x.qty)}</b></div></div><button class="secondary" data-remove="${i}" type="button">لابردن</button></div>`).join(''):'<p class="muted">هێشتا هیچ کاڵایەک زیاد نەکراوە.</p>';
+ document.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{cart.splice(+btn.dataset.remove,1);renderCart()});
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+ document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+ ['sale','stock','history','add','buy'].forEach(id=>document.getElementById(id).classList.toggle('hidden',id!==b.dataset.tab));
+});
+['saleProduct','saleQty','buyProduct','buyQty'].forEach(id=>document.getElementById(id).addEventListener('input',amounts));
+document.getElementById('saleSearch').oninput=e=>{
+ const s=e.target.value.toLowerCase();
+ const list=products.filter(p=>p.name.toLowerCase().includes(s)||p.code.includes(s));
+ const sel=document.getElementById('saleProduct');
+ sel.innerHTML=list.map(p=>`<option value="${p.code}">${p.name} · ${p.code} · ${fmt(p.price)}</option>`).join('');
+ if(list.length===1)sel.value=list[0].code;
+ amounts();
+};
+document.getElementById('addBtn').onclick=()=>{
+ let name=pName.value.trim(),code=pCode.value.trim(),cost=+pCost.value,price=+pPrice.value,stock=+pStock.value;
+ if(!name||!code||cost<0||price<=0||stock<0){msg('زانیارییەکان بپشکنە.');return}
+ db.collection('products').doc(code).get().then(d=>{
+  if(d.exists){msg('ئەم بارکۆدە پێشتر هەیە.');return}
+  db.collection('products').doc(code).set({name,code,cost,price,stock}).then(()=>{
+   pName.value=pCode.value='';msg('کاڵا زیاد کرا.');
+  });
+ });
+};
+document.getElementById('addToCartBtn').onclick=()=>{
+ let p=current('saleProduct'),q=+saleQty.value;
+ if(!p||q<1){msg('کاڵا یان ژمارەی دانە هەڵەیە.');return}
+ const already=cart.filter(x=>x.code===p.code).reduce((s,x)=>s+x.qty,0);
+ if(q+already>p.stock){msg('ژمارەی داواکراو لە کۆگا بەردەست نییە.');return}
+ const found=cart.find(x=>x.code===p.code);
+ if(found)found.qty+=q;else cart.push({code:p.code,name:p.name,price:p.price,cost:p.cost,qty:q});
+ renderCart();saleQty.value=1;amounts();msg('کاڵا زیاد کرا بۆ لیستی فرۆشتن.');
+};
+document.getElementById('sellBtn').onclick=async()=>{
+ if(!cart.length){msg('سەرەتا کاڵا زیاد بکە بۆ لیستی فرۆشتن.');return}
+ // fresh stock check against cloud before committing
+ for(const item of cart){
+  const d=await db.collection('products').doc(item.code).get();
+  if(!d.exists||d.data().stock<item.qty){msg('کۆگای کاڵای '+item.name+' بەشی ناکات.');return}
+ }
+ let total=0,earned=0;
+ for(const item of cart){
+  const ref=db.collection('products').doc(item.code);
+  total+=item.price*item.qty;earned+=(item.price-item.cost)*item.qty;
+  ref.update({stock:firebase.firestore.FieldValue.increment(-item.qty)});
+ }
+ const batch=db.batch();
+ batch.set(db.collection('sales').doc(),{date:new Date().toISOString(),user:auth.currentUser.email,items:cart.map(x=>({code:x.code,name:x.name,price:x.price,qty:x.qty})),total,profit:earned});
+ batch.set(db.collection('meta').doc('sync'),{t:Date.now()},{merge:true});
+ await batch.commit();
+ cart=[];renderCart();saleQty.value=1;amounts();msg('فرۆشتن بە کۆی '+fmt(total)+' تۆمار کرا.');
+};
+document.getElementById('buyBtn').onclick=async()=>{
+ let p=current('buyProduct'),q=+buyQty.value;
+ if(!p||q<1){msg('کاڵا یان ژمارەی دانە هەڵەیە.');return}
+ db.collection('products').doc(p.code).update({stock:firebase.firestore.FieldValue.increment(q)});
+ await db.collection('purchases').add({date:new Date().toISOString(),user:auth.currentUser.email,code:p.code,qty:q,total:p.cost*q});
+ buyQty.value=1;msg('کڕین تۆمار کرا.');
+};
+
+/* ======== Barcode scanner (ZXing) ======== */
+let codeReader=null;
+async function startScanner(mode){
+ try{
+  if(!navigator.mediaDevices?.getUserMedia){msg('کامێرا پێویستی بە HTTPS هەیە.');return}
+  codeReader=new ZXing.BrowserMultiFormatReader();
+  (mode==='add'?document.getElementById('addCameraArea'):document.getElementById('cameraArea')).classList.remove('hidden');
+  await codeReader.decodeFromVideoDevice(null,document.getElementById(mode==='add'?'addVideo':'video'),result=>{
+   if(!result)return;
+   const value=result.getText();stopCam();
+   if(mode==='add'){document.getElementById('pCode').value=value;}
+   else{
+    const p=products.find(x=>x.code===value);
+    if(!p){msg('ئەم بارکۆدە لە کۆگا نییە: '+value);return}
+    document.getElementById('saleSearch').value='';document.getElementById('saleProduct').value=p.code;amounts();
+   }
+   msg('بارکۆد خوێندرایەوە: '+value);
+  });
+ }catch(e){msg('ڕێگە بە کامێرا نەدرا یان کامێرا بەردەست نییە.')}
+}
+function stopCam(){
+ if(codeReader){try{codeReader.reset()}catch(e){}codeReader=null}
+ document.getElementById('cameraArea').classList.add('hidden');
+ document.getElementById('addCameraArea').classList.add('hidden');
+}
+document.getElementById('cameraBtn').onclick=()=>startScanner('sale');
+document.getElementById('addCameraBtn').onclick=()=>startScanner('add');
+document.getElementById('stopCamera').onclick=stopCam;
+document.getElementById('addStopCamera').onclick=stopCam;
+</script></body></html>
